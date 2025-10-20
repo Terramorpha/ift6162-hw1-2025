@@ -332,6 +332,9 @@ def optimize_full_trajectory(scenario='2d-2c', duration=14400, window_size=180,
             eta = (elapsed / (window_idx + 1)) * (n_windows - window_idx - 1) if window_idx > 0 else 0
             print(f"Window {window_idx+1}/{n_windows} | Elapsed: {elapsed:.0f}s | ETA: {eta:.0f}s", flush=True)
         
+        if t_window >= 7200:
+            system.set_night_mode()
+        
         x0 = get_state_vector(system, n_cases)
         d_traj = np.tile(get_disturbance(system, n_cases), (horizon_steps, 1))
         
@@ -356,9 +359,6 @@ def optimize_full_trajectory(scenario='2d-2c', duration=14400, window_size=180,
                 system.current_comp_on = [50.0, 0.0]
             else:
                 system.current_comp_on = [50.0, 50.0]
-            
-            if t_current >= 7200:
-                system.set_night_mode()
             
             # Now simulate with our controls (not PID!)
             # We need to manually step the system, bypassing the controller
