@@ -133,7 +133,7 @@ class TrajectoryOptimizer:
         self.dynamics_defects_jax = dynamics_defects
         self.dynamics_jacobian_jax = jit(jax.jacfwd(dynamics_defects))
     
-    def optimize(self, x0: np.ndarray, d_traj: np.ndarray, 
+    def optimize(self, x0: np.ndarray, d_traj: np.ndarray, P_ref: float, 
                 max_iter: int = 20, verbose: bool = False) -> Tuple[np.ndarray, np.ndarray]:
         """
         Solve multiple shooting optimization problem using SLSQP
@@ -153,7 +153,7 @@ class TrajectoryOptimizer:
         self.d_traj_jax = jnp.array(d_traj)
         
         # Initialize from PID baseline
-        u_init = self._get_pid_warmstart(x0, d_traj)
+        u_init = self._get_pid_warmstart(x0, d_traj, P_ref)
         x_init = self.forward_simulate(self.x0_jax, u_init, self.d_traj_jax)[1:]
         z0 = np.concatenate([np.array(u_init).flatten(), np.array(x_init).flatten()]).astype(np.float64)
         
@@ -237,7 +237,7 @@ class TrajectoryOptimizer:
         
         return u_optimal, x_optimal
     
-    def _get_pid_warmstart(self, x0: np.ndarray, d_traj: np.ndarray) -> jnp.ndarray:
+    def _get_pid_warmstart(self, x0: np.ndarray, d_traj: np.ndarray, P_ref: float) -> jnp.ndarray:
         """PID baseline for warm start"""
         system = sm.RefrigerationSystem(self.n_cases, [50.0, 50.0], 0.08, False)
         
@@ -254,12 +254,13 @@ class TrajectoryOptimizer:
         for i in range(self.n_cases):
             system.cases[i].state = np.array([T_goods[i], T_wall[i], T_air[i], M_ref[i]])
         system.P_suc = P_suc
-        system.set_day_mode()
         
         u_init = np.zeros((self.horizon, self.n_u))
         for t in range(self.horizon):
-            if t * self.dt >= 7200:
-                system.set_night_mode()
+            system.Q_airload = d_traj[t, 0]
+            system.m_ref_const = d_traj[t, -1]
+            system.P_ref = P_ref
+
             valves, comp_on, _, _ = system.simulate_step(self.dt, t * self.dt)
             u_init[t, :self.n_cases] = valves
             u_init[t, self.n_cases] = sum(comp_on)
@@ -334,7 +335,7 @@ def optimize_full_trajectory(scenario='2d-2c', duration=14400, window_size=180,
         x0 = get_state_vector(system, n_cases)
         d_traj = np.tile(get_disturbance(system, n_cases), (horizon_steps, 1))
         
-        u_window, x_window = optimizer.optimize(x0, d_traj, max_iter=max_iter, verbose=False)
+        u_window, x_window = optimizer.optimize(x0, d_traj, P_ref=system.P_ref, max_iter=max_iter, verbose=False)
         
         # Apply the ENTIRE optimized window (not just first step!)
         for step_in_window in range(horizon_steps):
