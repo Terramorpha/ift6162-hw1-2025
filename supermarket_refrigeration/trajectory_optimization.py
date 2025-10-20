@@ -292,7 +292,8 @@ def optimize_full_trajectory(scenario='2d-2c', duration=14400, window_size=180,
         """Extract state as flat vector [4n+1]"""
         state_vec = []
         for i in range(n_cases):
-            state_vec.extend(system.cases[i].state)  # [T_goods, T_wall, T_air, M_ref]
+            state_vec.append(system.cases[i].state)  # [T_goods, T_wall, T_air, M_ref]
+        state_vec = list(np.array(state_vec).transpose().flatten())
         state_vec.append(system.P_suc)
         return np.array(state_vec)
     
