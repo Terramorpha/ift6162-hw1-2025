@@ -26,7 +26,7 @@ import os
 os.environ["JAX_ENABLE_X64"] = "1"
 
 import time
-from typing import Tuple
+from typing import Tuple, reveal_type
 
 import jax
 import jax.numpy as jnp
@@ -285,7 +285,14 @@ class TrajectoryOptimizer:
         # - fun: function that computes dynamics defects
         # - lb, ub: bounds on defects (should be near zero)
         # - jac: Jacobian of defects (for faster convergence)
-        #
+
+        nonlinear_constraint = NonlinearConstraint(
+            lambda x: np.array(self.dynamics_defects_jax(jnp.array(x))),
+            -1e-4,
+            1e-4,
+            lambda x: np.array(self.dynamics_jacobian_jax(jnp.array(x))),
+        )
+
         # Then call scipy.optimize.minimize with:
         # - fun: objective function (objective_np)
         # - x0: initial guess (z0)
@@ -303,7 +310,21 @@ class TrajectoryOptimizer:
         # For dynamics, we want g(z) ≈ 0 (slight tolerance for numerical stability)
         #
         # Hint: Wrap your JAX functions to convert between numpy and jax arrays
-        raise NotImplementedError("Set up SLSQP optimization")
+
+        result = minimize(
+            objective_np,
+            z0,
+            method="SLSQP",
+            jac=objective_grad_np,
+            bounds=Bounds(
+                lb_x,
+                ub_x,
+            ),
+            constraints=[nonlinear_constraint],
+            options={"maxiter": max_iter, "ftol": 1e-6},
+        )
+
+        # raise NotImplementedError("Set up SLSQP optimization")
 
         # Extract solution
         u_optimal = result.x[:n_u_total].reshape(self.horizon, self.n_u)
