@@ -113,13 +113,30 @@ class TrajectoryOptimizer:
             x_inner = z[n_u_total:].reshape(horizon, n_x)
             x_full = jnp.concatenate([self.x0_jax[None, :], x_inner], axis=0)
 
-            # Power consumption
-            raise NotImplementedError()
-            v_comp = eta_vol * V_sl * comp_percentage / 100
+            P_suc = x_full[:, -1]
 
-            w_comp = v_comp * power_factor_jax(p_suc)
+            comp_percentage = u_traj[:, n_cases]
+
+            # breakpoint()
+
+            # Power consumption
+            V_comp = eta_vol * V_sl * comp_percentage / 100
+
+            # Do we use current state or forward state ?
+            w_comp = V_comp * power_factor_jax(P_suc[:-1])
+
+            power_cost = jnp.sum(w_comp)  # UNSURE
 
             # Switching penalty
+            valve_commands = u_traj[:, :n_cases]
+
+            switch_cost = jnp.sum(
+                jnp.abs(w_comp[1:] - w_comp[:-1])
+            ) + 1 / 100 * jnp.sum(
+                jnp.abs(valve_commands[1:, :] - valve_commands[:-1, :])
+            )
+
+            return power_cost / 1000.0 + 0.01 * switch_cost
 
             # TODO: Implement the objective function for multiple shooting optimization
             #
@@ -144,7 +161,7 @@ class TrajectoryOptimizer:
             #   (power in kW, switching penalty weighted at 0.01)
             #
             # See question.md for detailed mathematical formulation.
-            raise NotImplementedError("Implement objective function")
+            # raise NotImplementedError("Implement objective function")
 
         @jit
         def dynamics_defects(z):
@@ -318,8 +335,6 @@ class TrajectoryOptimizer:
         # For dynamics, we want g(z) ≈ 0 (slight tolerance for numerical stability)
         #
         # Hint: Wrap your JAX functions to convert between numpy and jax arrays
-
-        breakpoint()
 
         result = minimize(
             objective_np,
