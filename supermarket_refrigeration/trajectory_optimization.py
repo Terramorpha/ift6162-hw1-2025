@@ -10,18 +10,9 @@ Multiple shooting approach with SLSQP:
 Performance: ~5 minutes for full 4-hour optimization
 """
 
+import os
 import pdb
 import sys
-
-
-def except_hook(t, exception, traceback):
-    pdb.pm()
-    pass
-
-
-sys.excepthook = except_hook
-
-import os
 
 os.environ["JAX_ENABLE_X64"] = "1"
 
@@ -44,6 +35,14 @@ from supermarket import (
     make_forward_simulate,
     power_factor_jax,
 )
+
+
+def except_hook(t, exception, traceback):
+    pdb.pm()
+    pass
+
+
+sys.excepthook = except_hook
 
 
 class TrajectoryOptimizer:
@@ -154,14 +153,22 @@ class TrajectoryOptimizer:
             x_inner = z[n_u_total:].reshape(horizon, n_x)
             x_full = jnp.concatenate([self.x0_jax[None, :], x_inner], axis=0)
 
+            defect = jnp.zeros((horizon, n_x))
+
+            ks = jnp.arange(horizon)
+
             # TODO: Implement dynamics defects for multiple shooting
             #
             # In multiple shooting, both states AND controls are decision variables.
             # The dynamics must be enforced as equality constraints.
             #
             # For each time step k = 0, ..., horizon-1:
-            #   1. Propagate dynamics: x_predicted = dynamics_step(x[k], u[k], d[k])
-            #   2. Compute defect: defect[k] = x_predicted - x[k+1]
+
+            x_predicted = jax.vmap(lambda x, u, d: dynamics_step(x, u, d))(
+                x_full[:-1, :], u_traj, self.d_traj_jax
+            )
+
+            defect = x_predicted - x_full[1:, :]
             #
             # The optimizer will drive these defects to zero, ensuring x[k+1] = f(x[k], u[k], d[k])
             #
@@ -174,7 +181,8 @@ class TrajectoryOptimizer:
             # Return: flat vector of all defects, shape [horizon * n_x]
             #
             # This is the KEY difference between single and multiple shooting!
-            raise NotImplementedError("Implement dynamics defects")
+            # raise NotImplementedError("Implement dynamics defects")
+            return defect.reshape(horizon * n_x)
 
         self.objective_jax = objective
         self.objective_grad_jax = jit(grad(objective))
@@ -311,15 +319,14 @@ class TrajectoryOptimizer:
         #
         # Hint: Wrap your JAX functions to convert between numpy and jax arrays
 
+        breakpoint()
+
         result = minimize(
             objective_np,
             z0,
             method="SLSQP",
             jac=objective_grad_np,
-            bounds=Bounds(
-                lb_x,
-                ub_x,
-            ),
+            bounds=bounds,
             constraints=[nonlinear_constraint],
             options={"maxiter": max_iter, "ftol": 1e-6},
         )
