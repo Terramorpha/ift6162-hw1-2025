@@ -402,7 +402,7 @@ def optimize_full_trajectory(scenario='2d-2c', duration=14400, window_size=180,
     
     # Metrics (split u_opt_hist into valves and compressor)
     valve_states = u_opt_hist[:, :n_cases]
-    comp_switches = u_opt_hist[:, n_cases]  # Total compressor capacity
+    comp_switches = np.abs(np.diff(jnp.round(u_opt_hist[:, n_cases] / system.comp_capacities[0])))  # All compressor switches
     gamma_con_opt, gamma_switch_opt, gamma_pow_opt = sm.calculate_performance(
         time_opt, T_air_opt, P_suc_opt, comp_switches, power_opt, valve_states, P_ref=1.7
     )
